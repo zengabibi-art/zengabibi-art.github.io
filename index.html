@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>连接我们的小屋</title><style>
+body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f8e8dc;color:#633321;font:16px system-ui,sans-serif}
+main{box-sizing:border-box;width:min(94vw,420px);padding:28px;border:3px solid #a77856;border-radius:20px;background:#fff7e9;box-shadow:0 12px 32px #5a302133}
+h1{font-size:24px;text-align:center;margin:0 0 18px}p{line-height:1.5}label{display:block;margin:12px 0 6px}
+input{box-sizing:border-box;width:100%;padding:12px;border:1px solid #be997d;border-radius:10px;font:inherit}
+button{padding:12px 18px;border:2px solid #a77856;border-radius:12px;background:#f78f9c;color:#502b22;font:inherit;cursor:pointer}
+button:disabled{opacity:.5;cursor:default}.secondary{background:#fff7e9}.row{display:flex;gap:10px;margin-top:20px}
+.row button{flex:1}#message{min-height:24px;color:#9b413b}small{color:#765849}
+</style></head><body><main>
+<h1>连接我们的小屋</h1>
+<p id="intro">请用小屋云存档账号登录，再决定是否允许聊天查看和记录小屋数据。</p>
+<section id="login"><label for="email">邮箱</label><input id="email" type="email" autocomplete="email">
+<label for="password">小屋云存档密码</label><input id="password" type="password" autocomplete="current-password">
+<div class="row"><button id="sign-in">登录</button></div></section>
+<section id="consent" hidden><p><strong id="client-name"></strong> 请求连接小屋。</p>
+<p>允许后，它可以查看已同步的记录，并提交浇水、记账等任务。任务由小屋按原规则执行。你可以在 Supabase 撤销授权。</p>
+<small id="scope"></small><div class="row"><button id="deny" class="secondary">拒绝</button><button id="approve">允许连接</button></div></section>
+<p id="message" role="status"></p></main>
+<script type="module">
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+const client = createClient('https://jbzbmzdykwqzwkbqjfzh.supabase.co','sb_publishable_1drG5L0aZ4z6N7CUmsaLhw_VjIQyTyP')
+const id = new URL(location.href).searchParams.get('authorization_id')
+const message = document.getElementById('message')
+const login = document.getElementById('login')
+const consent = document.getElementById('consent')
+const show = (value) => { message.textContent = value }
+async function load() {
+  if (!id) { login.hidden = true; document.getElementById('intro').textContent = '这个页面用于授权小屋连接；请从聊天中的连接入口打开。'; return }
+  const session = await client.auth.getSession()
+  if (!session.data.session) { login.hidden = false; consent.hidden = true; return }
+  const { data, error } = await client.auth.oauth.getAuthorizationDetails(id)
+  if (error || !data) { show(error?.message ?? '授权请求已失效，请重新连接。'); return }
+  if (!('authorization_id' in data)) { location.assign(data.redirect_url); return }
+  document.getElementById('client-name').textContent = data.client?.name ?? '聊天助手'
+  document.getElementById('scope').textContent = data.scope ? '申请范围：' + data.scope : ''
+  login.hidden = true; consent.hidden = false; show('')
+}
+document.getElementById('sign-in').onclick = async () => {
+  show('正在登录……')
+  const { error } = await client.auth.signInWithPassword({
+    email: document.getElementById('email').value.trim(), password: document.getElementById('password').value,
+  })
+  if (error) { show(error.message); return }
+  await load()
+}
+async function decide(approve) {
+  document.getElementById('approve').disabled = true
+  document.getElementById('deny').disabled = true
+  const result = approve ? await client.auth.oauth.approveAuthorization(id) : await client.auth.oauth.denyAuthorization(id)
+  if (result.error) { show(result.error.message); document.getElementById('approve').disabled = false; document.getElementById('deny').disabled = false; return }
+  location.assign(result.data.redirect_url)
+}
+document.getElementById('approve').onclick = () => decide(true)
+document.getElementById('deny').onclick = () => decide(false)
+load().catch((error) => show(error.message ?? '连接失败'))
+</script></body></html>
